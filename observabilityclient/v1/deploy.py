@@ -15,10 +15,12 @@
 
 import os
 import sys
+import yaml
 
 from osc_lib.i18n import _
 
 from observabilityclient.v1 import base
+from observabilityclient.utils import runner
 
 
 INVENTORY = os.path.join(base.OBSWRKDIR, 'openstack-inventory.yaml')
@@ -35,7 +37,6 @@ class Discover(base.ObservabilityBaseCommand):
     def get_parser(self, prog_name):
         parser = super().get_parser(prog_name)
         parser.add_argument(
-            '-r',
             '--rcfile',
             default=None,
             help=_("Path to rc file used for Keystone authentication.")
@@ -64,8 +65,14 @@ class Discover(base.ObservabilityBaseCommand):
 
         # discover undercloud and overcloud nodes
         stackrc = parsed_args.rcfile if parsed_args.rcfile else STACKRC
-        self._execute('. {} && tripleo-ansible-inventory'
-                      ' --static-yaml-inventory {}'.format(stackrc, INVENTORY))
+        rc, out, err = self._execute(
+            '. {} && tripleo-ansible-inventory '
+            '--static-yaml-inventory {}'.format(stackrc, INVENTORY),
+            parsed_args
+        )
+        if rc:
+            print('Failed to generate Ansible inventory:\n%s\n%s' % (err, out))
+            sys.exit(1)
         # TODO: discover which nodes have observability ports open and provide
         #   /metrics url node for scraping for Prometheus agent configuration
 
@@ -87,10 +94,17 @@ class Setup(base.ObservabilityBaseCommand):
 
     def take_action(self, parsed_args):
         for compnt in parsed_args.components:
-            playfile = os.path.join(
-                base.OBSLIBDIR,
-                'openstack-observability-ansible',
-                'playbooks',
-                '%s.yaml' % compnt
-            )
-            self._run_playbook(playfile, INVENTORY, parsed_args=parsed_args)
+            playbook = '%s.yml' % compnt
+            try:
+                self._run_playbook(playbook, INVENTORY,
+                                   parsed_args=parsed_args)
+            except OSError as ex:
+                print('Failed to load playbook file: %s' % ex)
+                sys.exit(1)
+            except yaml.YAMLError as ex:
+                print('Failed to parse playbook configuration: %s' % ex)
+                sys.exit(1)
+            except runner.AnsibleRunnerFailed as ex:
+                print('Ansible run %s (rc %d)' % (ex.status, ex.rc))
+                if parsed_args.debug:
+                    print(ex.stderr)

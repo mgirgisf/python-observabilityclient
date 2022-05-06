@@ -13,8 +13,6 @@
 #   under the License.
 #
 
-import re
-
 
 STR_MASK = '*' * 8
 COLORS = {'nocolor': "\033[0m",

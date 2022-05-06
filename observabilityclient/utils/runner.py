@@ -25,12 +25,6 @@ class AnsibleRunnerException(Exception):
     """Base exception class for runner exceptions"""
 
 
-class AnsibleRunnerFileError(AnsibleRunnerException):
-    """Raised when ansible runner has some issues with files required
-    for the playbook run
-    """
-
-
 class AnsibleRunnerFailed(AnsibleRunnerException):
     """Raised when ansible run failed"""
 
@@ -168,7 +162,12 @@ class AnsibleRunner:
             status, rc = run.run()
         finally:
             if status in ['failed', 'timeout', 'canceled'] or rc != 0:
-                raise AnsibleRunnerFailed(status, rc, run.stderr.read())
+                err = getattr(run, 'stderr', getattr(run, 'stdout', None))
+                if err:
+                    error = err.read()
+                else:
+                    error = "Ansible failed with status %s" % status
+                raise AnsibleRunnerFailed(status, rc, error)
 
     def destroy(self, clear: bool = False):
         """Cleans environment after Ansible run.

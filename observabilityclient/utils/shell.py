@@ -17,8 +17,21 @@ import os
 import pipes
 import shutil
 import subprocess
+import tempfile
 
+
+from contextlib import contextmanager
 from observabilityclient.utils import strings
+
+
+@contextmanager
+def tempdir(base: str, prefix: str = None, clear: bool = True) -> str:
+    path = tempfile.mkdtemp(prefix=prefix, dir=base)
+    try:
+        yield path
+    finally:
+        if clear:
+            shutil.rmtree(path, ignore_errors=True)
 
 
 def file_check(path: str, ftype: str = 'file', clear: bool = False) -> str:
