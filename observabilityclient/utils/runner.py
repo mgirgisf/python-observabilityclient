@@ -18,6 +18,10 @@ import configparser
 import os
 import shutil
 
+from ansible.inventory.manager import InventoryManager
+from ansible.parsing.dataloader import DataLoader
+from ansible.vars.manager import VariableManager
+
 from observabilityclient.utils import shell
 
 
@@ -38,6 +42,27 @@ class AnsibleRunnerFailed(AnsibleRunnerException):
         return ('Ansible run failed with status {}'
                 ' (return code {}):\n{}').format(self.status, self.rc,
                                                  self.stderr)
+
+
+def parse_inventory_hosts(inventory):
+    """Returns list of dictionaries. Each dictionary contains info about
+    single node from inventory.
+    """
+    dl = DataLoader()
+    if isinstance(inventory, str):
+        inventory = [inventory]
+    im = InventoryManager(loader=dl, sources=inventory)
+    vm = VariableManager(loader=dl, inventory=im)
+
+    out = []
+    for host in im.get_hosts():
+        data = vm.get_vars(host=host)
+        out.append(
+            dict(host=data.get('inventory_hostname', str(host)),
+                 ip=data.get('ctlplane_ip', data.get('ansible_host')),
+                 hostname=data.get('canonical_hostname'))
+        )
+    return out
 
 
 class AnsibleRunner:

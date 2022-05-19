@@ -14,6 +14,7 @@
 #
 
 import os
+import requests
 import sys
 import yaml
 
@@ -24,6 +25,7 @@ from observabilityclient.utils import runner
 
 
 INVENTORY = os.path.join(base.OBSWRKDIR, 'openstack-inventory.yaml')
+ENDPOINTS = os.path.join(base.OBSWRKDIR, 'scrape-endpoints.yaml')
 STACKRC = os.path.join(base.OBSWRKDIR, 'stackrc')
 STACKRCKEYS = ('OS_AUTH_TYPE', 'OS_PASSWORD', 'OS_AUTH_URL', 'OS_USERNAME',
                'OS_PROJECT_NAME', 'OS_NO_CACHE', 'COMPUTE_API_VERSION',
@@ -40,6 +42,12 @@ class Discover(base.ObservabilityBaseCommand):
             '--rcfile',
             default=None,
             help=_("Path to rc file used for Keystone authentication.")
+        )
+        parser.add_argument(
+            '--scrape',
+            action='append',
+            default=['collectd/9666'],
+            help=_("Service/Port of scrape endpoint to check on nodes")
         )
         return parser
 
@@ -73,8 +81,23 @@ class Discover(base.ObservabilityBaseCommand):
         if rc:
             print('Failed to generate Ansible inventory:\n%s\n%s' % (err, out))
             sys.exit(1)
-        # TODO: discover which nodes have observability ports open and provide
-        #   /metrics url node for scraping for Prometheus agent configuration
+
+        # discover scrape endpoints
+        endpoints = dict()
+        hosts = runner.parse_inventory_hosts(INVENTORY)
+        for scrape in parsed_args.scrape:
+            service, port = scrape.split('/')
+            for host in hosts:
+                node = '{}:{}'.format(host['ip'], port)
+                try:
+                    r = requests.get('http://{node}/metrics')
+                except requests.exceptions.ConnectTimeout:
+                    continue
+                if r.status_code == 200:
+                    endpoints.setdefault(service.strip(), []).append(node)
+        with open(ENDPOINTS, 'w') as f:
+            data = yaml.dump(endpoints, f)
+        print("Discovered following scraping endpoints:\n%s" % data)
 
 
 class Setup(base.ObservabilityBaseCommand):
