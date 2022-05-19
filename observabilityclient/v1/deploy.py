@@ -14,6 +14,7 @@
 #
 
 import os
+import requests
 import sys
 import yaml
 
@@ -24,11 +25,26 @@ from observabilityclient.utils import runner
 
 
 INVENTORY = os.path.join(base.OBSWRKDIR, 'openstack-inventory.yaml')
+ENDPOINTS = os.path.join(base.OBSWRKDIR, 'scrape-endpoints.yaml')
 STACKRC = os.path.join(base.OBSWRKDIR, 'stackrc')
 STACKRCKEYS = ('OS_AUTH_TYPE', 'OS_PASSWORD', 'OS_AUTH_URL', 'OS_USERNAME',
                'OS_PROJECT_NAME', 'OS_NO_CACHE', 'COMPUTE_API_VERSION',
                'OS_USER_DOMAIN_NAME', 'OS_CLOUDNAME', 'OS_PROJECT_DOMAIN_NAME',
                'OS_IDENTITY_API_VERSION', 'NOVA_VERSION')
+
+
+def _curl(host: dict, port: int, timeout: int = 1) -> str:
+    """Returns scraping endpoint URL if it is reachable
+    otherwise returns None."""
+    url = f'http://{host["ip"]}:{port}/metrics'
+    try:
+        r = requests.get(url, timeout=1)
+    except requests.exceptions.ConnectionError:
+        url = None
+    if r.status_code != 200:
+        url = None
+    r.close()
+    return url
 
 
 class Discover(base.ObservabilityBaseCommand):
@@ -73,8 +89,22 @@ class Discover(base.ObservabilityBaseCommand):
         if rc:
             print('Failed to generate Ansible inventory:\n%s\n%s' % (err, out))
             sys.exit(1)
-        # TODO: discover which nodes have observability ports open and provide
-        #   /metrics url node for scraping for Prometheus agent configuration
+
+        # discover scrape endpoints
+        endpoints = dict()
+        hosts = runner.parse_inventory_hosts(INVENTORY)
+        for scrape in parsed_args.scrape:
+            service, port = scrape.split('/')
+            for host in hosts:
+                node = _curl(host, port, timeout=1)
+                if node:
+                    endpoints.setdefault(service.strip(), []).append(node)
+                elif parsed_args.dev:
+                    print(f'Failed to fetch {service} metrics on {host["ip"]}')
+        data = yaml.safe_dump(endpoints, default_flow_style=False)
+        with open(ENDPOINTS, 'w') as f:
+            data = yaml.dump(endpoints, f)
+        print("Discovered following scraping endpoints:\n%s" % data)
 
 
 class Setup(base.ObservabilityBaseCommand):
@@ -106,5 +136,5 @@ class Setup(base.ObservabilityBaseCommand):
                 sys.exit(1)
             except runner.AnsibleRunnerFailed as ex:
                 print('Ansible run %s (rc %d)' % (ex.status, ex.rc))
-                if parsed_args.debug:
+                if parsed_args.dev:
                     print(ex.stderr)

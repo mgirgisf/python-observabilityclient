@@ -46,9 +46,9 @@ class ObservabilityBaseCommand(command.Command):
             add_help=False
         )
         parser.add_argument(
-            '--debug',
+            '--dev',
             action='store_true',
-            help=_("Enable debugging output.")
+            help=_("Enable development output.")
         )
         parser.add_argument(
             '--messy',
@@ -110,7 +110,7 @@ class ObservabilityBaseCommand(command.Command):
                 playfile.write(content)
             if parsed_args.messy:
                 print("Running playbook %s" % playbook)
-            rnr.run(playbook, inventory, debug=parsed_args.debug)
+            rnr.run(playbook, inventory, debug=parsed_args.dev)
             rnr.destroy(clear=not parsed_args.messy)
 
     def _execute(self, command, parsed_args):
@@ -118,6 +118,6 @@ class ObservabilityBaseCommand(command.Command):
         with shell.tempdir(OBSTMPDIR, prefix='exec',
                            clear=not parsed_args.messy) as tmpdir:
             rc, out, err = shell.execute(command, workdir=tmpdir,
-                                         can_fail=parsed_args.debug,
+                                         can_fail=parsed_args.dev,
                                          use_shell=True)
         return rc, out, err
