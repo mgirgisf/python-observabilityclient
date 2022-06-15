@@ -18,6 +18,10 @@ import configparser
 import os
 import shutil
 
+from ansible.inventory.manager import InventoryManager
+from ansible.parsing.dataloader import DataLoader
+from ansible.vars.manager import VariableManager
+
 from observabilityclient.utils import shell
 
 
@@ -38,6 +42,27 @@ class AnsibleRunnerFailed(AnsibleRunnerException):
         return ('Ansible run failed with status {}'
                 ' (return code {}):\n{}').format(self.status, self.rc,
                                                  self.stderr)
+
+
+def parse_inventory_hosts(inventory):
+    """Returns list of dictionaries. Each dictionary contains info about
+    single node from inventory.
+    """
+    dl = DataLoader()
+    if isinstance(inventory, str):
+        inventory = [inventory]
+    im = InventoryManager(loader=dl, sources=inventory)
+    vm = VariableManager(loader=dl, inventory=im)
+
+    out = []
+    for host in im.get_hosts():
+        data = vm.get_vars(host=host)
+        out.append(
+            dict(host=data.get('inventory_hostname', str(host)),
+                 ip=data.get('ctlplane_ip', data.get('ansible_host')),
+                 hostname=data.get('canonical_hostname'))
+        )
+    return out
 
 
 class AnsibleRunner:
@@ -121,16 +146,12 @@ class AnsibleRunner:
                 parser.write(conffile)
         os.environ['ANSIBLE_CONFIG'] = ansible_cfg
 
-    def run(self, playbook, inventory: str,
-            tags: str = None, skip_tags: str = None, timeout: int = 30,
-            quiet: bool = False, debug: bool = False):
+    def run(self, playbook, tags: str = None, skip_tags: str = None,
+            timeout: int = 30, quiet: bool = False, debug: bool = False):
         """Run given Ansible playbook.
 
         :param playbook: Playbook filename.
         :type playbook: String
-
-        :param inventory: Ansible inventory file.
-        :type inventory: String
 
         :param tags: Run specific tags.
         :type tags: String
@@ -152,7 +173,7 @@ class AnsibleRunner:
             'verbosity': 3 if debug else 0,
         }
         locs = locals()
-        for arg in ['playbook', 'inventory', 'tags', 'skip_tags', 'quiet']:
+        for arg in ['playbook', 'tags', 'skip_tags', 'quiet']:
             if locs[arg] is not None:
                 kwargs[arg] = locs[arg]
         run_conf = ansible_runner.runner_config.RunnerConfig(**kwargs)
