@@ -13,10 +13,8 @@
 #   under the License.
 #
 
-import argparse
-import jinja2
 import os
-import yaml
+import shutil
 
 from osc_lib.command import command
 from osc_lib.i18n import _
@@ -27,24 +25,13 @@ from observabilityclient.utils import shell
 
 OBSLIBDIR = shell.file_check('/usr/share/osp-observability', 'directory')
 OBSWRKDIR = shell.file_check('/var/lib/osp-observability', 'directory')
-OBSTMPDIR = shell.file_check(os.path.join(OBSWRKDIR, 'tmp'), 'directory')
-
-
-_j2env = jinja2.Environment(
-    loader=jinja2.FileSystemLoader(os.path.join(OBSLIBDIR, 'playbooks')),
-    variable_start_string='{!', variable_end_string='!}'
-)
 
 
 class ObservabilityBaseCommand(command.Command):
     """Base class for observability commands."""
 
     def get_parser(self, prog_name):
-        parser = argparse.ArgumentParser(
-            description=self.get_description(),
-            prog=prog_name,
-            add_help=False
-        )
+        parser = super().get_parser(prog_name)
         parser.add_argument(
             '--dev',
             action='store_true',
@@ -89,33 +76,35 @@ class ObservabilityBaseCommand(command.Command):
 
     def _run_playbook(self, playbook, inventory, parsed_args):
         """Run Ansible raw playbook"""
-        # prepare playbook template parameters and playbook content
-        if parsed_args.config:
-            with open(parsed_args.config, 'r') as paramfile:
-                params = yaml.safe_load(paramfile)
-        else:
-            params = dict()
-        template = _j2env.get_template("%s.j2" % playbook)
-        content = template.render(workdir=OBSWRKDIR, **params)
-        # create playbook file temporarily and execute it
-        rnr = runner.AnsibleRunner(parsed_args.workdir,
-                                   moduledir=parsed_args.moduledir,
-                                   ssh_user=parsed_args.ssh_user,
-                                   ssh_key=parsed_args.ssh_key,
-                                   ansible_cfg=parsed_args.ansible_cfg)
-        with shell.tempdir(OBSTMPDIR, prefix=os.path.splitext(playbook)[0],
+        playbook = os.path.join(OBSLIBDIR, 'playbooks', playbook)
+        tmpbase = shell.file_check(os.path.join(parsed_args.workdir, 'tmp'),
+                                   'directory')
+        with shell.tempdir(tmpbase, prefix=os.path.splitext(playbook)[0],
                            clear=not parsed_args.messy) as tmpdir:
-            playbook = os.path.join(tmpdir, playbook)
-            with open(playbook, 'w') as playfile:
-                playfile.write(content)
+            # copy extravars file for the playbook run
+            if parsed_args.config:
+                envdir = shell.file_check(os.path.join(tmpdir, 'env'),
+                                          'directory')
+                shutil.copy(parsed_args.config,
+                            os.path.join(envdir, 'extravars'))
+            # copy inventory file for the playbook run
+            shutil.copy(inventory, os.path.join(tmpdir, 'inventory'))
+            # run playbook
+            rnr = runner.AnsibleRunner(tmpdir,
+                                       moduledir=parsed_args.moduledir,
+                                       ssh_user=parsed_args.ssh_user,
+                                       ssh_key=parsed_args.ssh_key,
+                                       ansible_cfg=parsed_args.ansible_cfg)
             if parsed_args.messy:
                 print("Running playbook %s" % playbook)
-            rnr.run(playbook, inventory, debug=parsed_args.dev)
+            rnr.run(playbook, debug=parsed_args.dev)
             rnr.destroy(clear=not parsed_args.messy)
 
     def _execute(self, command, parsed_args):
         """Execute local command"""
-        with shell.tempdir(OBSTMPDIR, prefix='exec',
+        tmpbase = shell.file_check(os.path.join(parsed_args.workdir, 'tmp'),
+                                   'directory')
+        with shell.tempdir(tmpbase, prefix='exec',
                            clear=not parsed_args.messy) as tmpdir:
             rc, out, err = shell.execute(command, workdir=tmpdir,
                                          can_fail=parsed_args.dev,

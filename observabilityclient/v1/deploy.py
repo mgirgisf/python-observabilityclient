@@ -27,10 +27,6 @@ from observabilityclient.utils import runner
 INVENTORY = os.path.join(base.OBSWRKDIR, 'openstack-inventory.yaml')
 ENDPOINTS = os.path.join(base.OBSWRKDIR, 'scrape-endpoints.yaml')
 STACKRC = os.path.join(base.OBSWRKDIR, 'stackrc')
-STACKRCKEYS = ('OS_AUTH_TYPE', 'OS_PASSWORD', 'OS_AUTH_URL', 'OS_USERNAME',
-               'OS_PROJECT_NAME', 'OS_NO_CACHE', 'COMPUTE_API_VERSION',
-               'OS_USER_DOMAIN_NAME', 'OS_CLOUDNAME', 'OS_PROJECT_DOMAIN_NAME',
-               'OS_IDENTITY_API_VERSION', 'NOVA_VERSION')
 
 
 def _curl(host: dict, port: int, timeout: int = 1) -> str:
@@ -39,51 +35,32 @@ def _curl(host: dict, port: int, timeout: int = 1) -> str:
     url = f'http://{host["ip"]}:{port}/metrics'
     try:
         r = requests.get(url, timeout=1)
+        if r.status_code != 200:
+            url = None
+        r.close()
     except requests.exceptions.ConnectionError:
         url = None
-    if r.status_code != 200:
-        url = None
-    r.close()
     return url
 
 
 class Discover(base.ObservabilityBaseCommand):
-    """Install and configure given Observability component(s)"""
+    """Generate Ansible inventory file and scrapable enpoints list file."""
 
     def get_parser(self, prog_name):
         parser = super().get_parser(prog_name)
         parser.add_argument(
-            '--rcfile',
-            default=None,
-            help=_("Path to rc file used for Keystone authentication.")
+            '--scrape',
+            action='append',
+            default=['collectd/9666'],
+            help=_("Service/Port of scrape endpoint to check on nodes")
         )
         return parser
 
     def take_action(self, parsed_args):
-        # make sure we have rc file provided or ready
-        if not parsed_args.rcfile:
-            env = os.environ.keys()
-            have = True
-            for key in STACKRCKEYS:
-                if key not in env:
-                    have = False
-                    break
-            if not os.path.exists(STACKRC):
-                if have:
-                    with open(STACKRC, 'w') as f:
-                        for key in STACKRCKEYS:
-                            f.write('{}={}\n'.format(key, os.environ[key]))
-                    os.chmod(STACKRC, 0o600)
-                else:
-                    print(_('Keystone auth is required. Either provide rc file'
-                            'or source one before running the command.'))
-                    sys.exit(1)
-
         # discover undercloud and overcloud nodes
-        stackrc = parsed_args.rcfile if parsed_args.rcfile else STACKRC
         rc, out, err = self._execute(
-            '. {} && tripleo-ansible-inventory '
-            '--static-yaml-inventory {}'.format(stackrc, INVENTORY),
+            'tripleo-ansible-inventory '
+            '--static-yaml-inventory {}'.format(INVENTORY),
             parsed_args
         )
         if rc:
@@ -96,19 +73,25 @@ class Discover(base.ObservabilityBaseCommand):
         for scrape in parsed_args.scrape:
             service, port = scrape.split('/')
             for host in hosts:
+                if parsed_args.dev:
+                    name = host["hostname"] if host["hostname"] else host["ip"]
+                    print(f'Trying to fetch {service} metrics on host '
+                          f'{name} at port {port}', end='')
                 node = _curl(host, port, timeout=1)
                 if node:
                     endpoints.setdefault(service.strip(), []).append(node)
-                elif parsed_args.dev:
-                    print(f'Failed to fetch {service} metrics on {host["ip"]}')
+                if parsed_args.dev:
+                    print(' [success]' if node else ' [failure]')
         data = yaml.safe_dump(endpoints, default_flow_style=False)
         with open(ENDPOINTS, 'w') as f:
-            data = yaml.dump(endpoints, f)
+            f.write(data)
         print("Discovered following scraping endpoints:\n%s" % data)
 
 
 class Setup(base.ObservabilityBaseCommand):
     """Install and configure given Observability component(s)"""
+
+    auth_required = False
 
     def get_parser(self, prog_name):
         parser = super().get_parser(prog_name)
