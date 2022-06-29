@@ -54,13 +54,20 @@ class Discover(base.ObservabilityBaseCommand):
             default=['collectd/9666'],
             help=_("Service/Port of scrape endpoint to check on nodes")
         )
+        parser.add_argument(
+            '--stack-name',
+            default='overcloud',
+            help=_("Overcloud stack name for which inventory file should "
+                   "be generated")
+        )
         return parser
 
     def take_action(self, parsed_args):
         # discover undercloud and overcloud nodes
         rc, out, err = self._execute(
             'tripleo-ansible-inventory '
-            '--static-yaml-inventory {}'.format(INVENTORY),
+            '--static-yaml-inventory {} '
+            '--stack {}'.format(INVENTORY, parsed_args.stack_name),
             parsed_args
         )
         if rc:
