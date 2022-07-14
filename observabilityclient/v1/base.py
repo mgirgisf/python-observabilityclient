@@ -24,7 +24,9 @@ from observabilityclient.utils import shell
 
 
 OBSLIBDIR = shell.file_check('/usr/share/osp-observability', 'directory')
-OBSWRKDIR = shell.file_check('/var/lib/osp-observability', 'directory')
+OBSWRKDIR = shell.file_check(
+    os.path.expanduser('~/.osp-observability', 'directory')
+)
 
 
 class ObservabilityBaseCommand(command.Command):
@@ -77,9 +79,8 @@ class ObservabilityBaseCommand(command.Command):
     def _run_playbook(self, playbook, inventory, parsed_args):
         """Run Ansible raw playbook"""
         playbook = os.path.join(OBSLIBDIR, 'playbooks', playbook)
-        tmpbase = shell.file_check(os.path.join(parsed_args.workdir, 'tmp'),
-                                   'directory')
-        with shell.tempdir(tmpbase, prefix=os.path.splitext(playbook)[0],
+        with shell.tempdir(parsed_args.workdir,
+                           prefix=os.path.splitext(playbook)[0],
                            clear=not parsed_args.messy) as tmpdir:
             # copy extravars file for the playbook run
             if parsed_args.config:
@@ -102,9 +103,7 @@ class ObservabilityBaseCommand(command.Command):
 
     def _execute(self, command, parsed_args):
         """Execute local command"""
-        tmpbase = shell.file_check(os.path.join(parsed_args.workdir, 'tmp'),
-                                   'directory')
-        with shell.tempdir(tmpbase, prefix='exec',
+        with shell.tempdir(parsed_args.workdir, prefix='exec',
                            clear=not parsed_args.messy) as tmpdir:
             rc, out, err = shell.execute(command, workdir=tmpdir,
                                          can_fail=parsed_args.dev,
