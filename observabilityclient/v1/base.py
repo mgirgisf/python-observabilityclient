@@ -25,7 +25,7 @@ from observabilityclient.utils import shell
 
 OBSLIBDIR = shell.file_check('/usr/share/osp-observability', 'directory')
 OBSWRKDIR = shell.file_check(
-    os.path.expanduser('~/.osp-observability', 'directory')
+    os.path.expanduser('~/.osp-observability'), 'directory'
 )
 
 
