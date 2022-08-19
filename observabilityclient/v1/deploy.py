@@ -51,7 +51,7 @@ class Discover(base.ObservabilityBaseCommand):
         parser.add_argument(
             '--scrape',
             action='append',
-            default=['collectd/9666'],
+            default=['collectd/9103'],
             help=_("Service/Port of scrape endpoint to check on nodes")
         )
         parser.add_argument(
