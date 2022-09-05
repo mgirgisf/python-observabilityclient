@@ -15,6 +15,7 @@
 
 import os
 import requests
+import shutil
 import sys
 import yaml
 
@@ -24,7 +25,21 @@ from observabilityclient.v1 import base
 from observabilityclient.utils import runner
 
 
+class InventoryError(Exception):
+    def __init__(self, err, out):
+        self.err = err
+        self.out = out
+
+    def __str__(self):
+        return ('Failed to generate or locate Ansible '
+                'inventory file:\n%s\n%s' % (self.err or '', self.out))
+
+
 INVENTORY = os.path.join(base.OBSWRKDIR, 'openstack-inventory.yaml')
+INV_FALLBACKS = [
+    '~/tripleo-deploy/{stack}',
+    './overcloud-deploy/{stack}'
+]
 ENDPOINTS = os.path.join(base.OBSWRKDIR, 'scrape-endpoints.yaml')
 STACKRC = os.path.join(base.OBSWRKDIR, 'stackrc')
 
@@ -64,14 +79,30 @@ class Discover(base.ObservabilityBaseCommand):
 
     def take_action(self, parsed_args):
         # discover undercloud and overcloud nodes
-        rc, out, err = self._execute(
-            'tripleo-ansible-inventory '
-            '--static-yaml-inventory {} '
-            '--stack {}'.format(INVENTORY, parsed_args.stack_name),
-            parsed_args
-        )
-        if rc:
-            print('Failed to generate Ansible inventory:\n%s\n%s' % (err, out))
+        try:
+            rc, out, err = self._execute(
+                'tripleo-ansible-inventory '
+                '--static-yaml-inventory {} '
+                '--stack {}'.format(INVENTORY, parsed_args.stack_name),
+                parsed_args
+            )
+            if rc:
+                raise InventoryError(err, out)
+
+            # OSP versions with deprecated tripleo-ansible-inventory fallbacks
+            # to static inventory file generated at one of the fallback path
+            if not os.path.exists(INVENTORY):
+                for i in INV_FALLBACKS:
+                    absi = i.format(stack=parsed_args.stack_name)
+                    absi = os.path.abspath(os.path.expanduser(absi))
+                    if os.path.exists(absi):
+                        shutil.copyfile(absi, INVENTORY)
+                        break
+                else:
+                    raise InventoryError('None of the fallback inventory files'
+                                         ' exists: %s' % INV_FALLBACKS, '')
+        except InventoryError as ex:
+            print(str(ex))
             sys.exit(1)
 
         # discover scrape endpoints
