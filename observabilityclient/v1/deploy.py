@@ -117,9 +117,7 @@ class Discover(base.ObservabilityBaseCommand):
                           f'{name} at port {port}', end='')
                 node = _curl(host, port, timeout=1)
                 if node:
-                    endpoints.setdefault(host["host"], dict()).setdefault(
-                        service.strip(), []
-                    ).append(node)
+                    endpoints.setdefault(service.strip(), []).append(node)
                 if parsed_args.dev:
                     print(' [success]' if node else ' [failure]')
         data = yaml.safe_dump(endpoints, default_flow_style=False)
