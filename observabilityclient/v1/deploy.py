@@ -37,7 +37,7 @@ class InventoryError(Exception):
 
 INVENTORY = os.path.join(base.OBSWRKDIR, 'openstack-inventory.yaml')
 INV_FALLBACKS = [
-    '~/tripleo-deploy/{stack}/openstack-inventory.yaml,
+    '~/tripleo-deploy/{stack}/openstack-inventory.yaml',
     './overcloud-deploy/{stack}/openstack-inventory.yaml'
 ]
 ENDPOINTS = os.path.join(base.OBSWRKDIR, 'scrape-endpoints.yaml')
