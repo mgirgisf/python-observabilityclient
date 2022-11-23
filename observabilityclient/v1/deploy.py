@@ -138,6 +138,7 @@ class Setup(base.ObservabilityBaseCommand):
             nargs='+',
             choices=[
                 'prometheus_agent',
+                'deploy_sgcore',
                 # TODO: in future will contain option for all stack components
             ]
         )
